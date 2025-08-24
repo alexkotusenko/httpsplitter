@@ -3,18 +3,21 @@
 pub enum Version {
     /// Unlike HTTP versions 1.0 and 1.1, the version 0.9 is not mentioned in the first line of the packet.
     /// 
-    /// For example, `GET /api` would be interpreted as HTTP/0.9
-    v0_9,
-    v1_0,
-    v1_1
+    /// For example, `GET /api` would be interpreted as HTTP/0.9.
+    ///
+    /// HTTP/0.9 does not have header support, but this crate does not check for that.
+    /// The only indication of the version considered by this crate is in the first line of the packet.
+    V0_9,
+    V1_0,
+    V1_1
 }
 
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let version_str = match self {
-            Version::v0_9 => "",
-            Version::v1_0 => "HTTP/1.0",
-            Version::v1_1 => "HTTP/1.1",
+            Version::V0_9 => "",
+            Version::V1_0 => "HTTP/1.0",
+            Version::V1_1 => "HTTP/1.1",
         };
         write!(f, "{}", version_str)
     }
@@ -24,9 +27,9 @@ impl std::fmt::Display for Version {
 impl Version {
     pub fn to_string(&self) -> String {
         let slice = match self {
-            Version::v0_9 => "",
-            Version::v1_0 => "HTTP/1.0",
-            Version::v1_1 => "HTTP/1.1",
+            Version::V0_9 => "",
+            Version::V1_0 => "HTTP/1.0",
+            Version::V1_1 => "HTTP/1.1",
         };
         return slice.to_string();
     }
@@ -39,7 +42,7 @@ impl Version {
         match parts.len() {
             2 => {
                 // Version 0.9, e.g. `GET /api`
-                return Some(Self::v0_9);
+                return Some(Self::V0_9);
             }
             3 => {} // continue
             _ => {
@@ -50,8 +53,8 @@ impl Version {
         // we know that the length of the parts is 3
         assert_eq!(parts.len(), 3);
         match parts[2] {
-            "HTTP/1.1" => Some(Self::v1_1),
-            "HTTP/1.0" => Some(Self::v1_0),
+            "HTTP/1.1" => Some(Self::V1_1),
+            "HTTP/1.0" => Some(Self::V1_0),
             _ => None // invalid
         }
     }
@@ -73,7 +76,7 @@ mod version_test {
     #[test]
     fn valid_0_9__1() {
         assert_eq!(
-            Some(Version::v0_9),
+            Some(Version::V0_9),
             Version::try_from_first_line("GET /api")
         );
     }
@@ -81,7 +84,7 @@ mod version_test {
     #[test]
     fn valid_0_9__2() {
         assert_eq!(
-            Some(Version::v0_9),
+            Some(Version::V0_9),
             Version::try_from_first_line("POST /")
         );
     }
@@ -89,7 +92,7 @@ mod version_test {
     #[test]
     fn valid_1_0__1() {
         assert_eq!(
-            Some(Version::v1_0),
+            Some(Version::V1_0),
             Version::try_from_first_line("POST / HTTP/1.0")
         );
     }
@@ -97,7 +100,7 @@ mod version_test {
     #[test]
     fn valid_1_1__1() {
         assert_eq!(
-            Some(Version::v1_1),
+            Some(Version::V1_1),
             Version::try_from_first_line("POST / HTTP/1.1")
         );
     }

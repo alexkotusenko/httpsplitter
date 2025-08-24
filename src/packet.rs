@@ -1,6 +1,35 @@
-use crate::obj::{Body, Method, Header, Version};
+use crate::obj::{Body, Method, Header, Version, StatusCode};
+
+/// An error that occurs when building or parsing packets
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PacketErr {
+    /// HTTP version not specified (in reponse packets) -> cannot validate required fields
+    NoVersion, 
+    /// No status code provided for reponse packets in HTTP versions that require it
+    NoStatusCode,
+    /// Since HTTP/0.9 packets do not have a status line and just return a body, it would be reasonable to throw this error when a HTTP/0.9 packet does not have a body. After all, the packet would be empty without it.
+    NoBody,
+    // TODO add doc
+    NoVersionFound,
+    // TODO add doc
+    NotEnoughLines,
+    // TODO add doc
+    FirstLineWordCountMismatch,
+    // TODO add doc
+    InvalidMethod,
+}
 
 /// An HTTP request packet
+///
+/// Example:
+/// 
+/// ```text
+/// GET /index.html HTTP/1.1
+/// Host: www.example.com
+/// Accept-Encoding: gzip, deflate, br
+/// Accept-Language: en-US,en;q=0.9
+/// Connection: keep-alive
+/// ```
 pub struct RequestPacket {
     pub method: Method,
     /// Aka the resource
@@ -35,6 +64,18 @@ impl RequestPacket {
         // No \r\n after the body
 
         res
+    }
+}
+
+impl Into<String> for RequestPacket {
+    fn into(self) -> String {
+        self.to_string()
+    }
+}
+
+impl Into<Vec<u8>> for RequestPacket {
+    fn into(self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 
@@ -108,7 +149,7 @@ impl RequestPacketBuilder {
 }
 
 #[cfg(test)]
-mod reponse_packet_test {
+mod request_packet_test {
     use super::*;
 
     #[test]
@@ -134,12 +175,251 @@ mod reponse_packet_test {
     }
 }
 
-// An HTTP response packet
-// TODO
-//pub struct ResponsePacket {}
+/// An HTTP response packet.
+///
+/// A HTTP/0.9 packet has no status line (which includes a version & status code) or headers, and just returns the body. This is why the `version`, `status`, and `headers` are optional.
+pub struct ResponsePacket {
+    pub version: Version,
+    pub status: Option<StatusCode>,
+    pub headers: Option<Vec<Header>>,
+    pub body: Option<Body>,
+}
 
-// TODO
-// Transitive struct for building response packets.
-//
-// Gets consumed to yield a ResponsePacket
-//pub struct ResponsePacketBuilder {}
+
+impl ResponsePacket {
+    pub fn try_to_string(&self) -> Result<String, PacketErr> {
+        // Normally, if we are using a builder, if we create a ResponsePacket struct, we can be sure that it has all the required fields. But it doens't hurt to check again
+        match self.version {
+            Version::V0_9 => {
+                // Required fields:
+                // 1) Body
+                if let None = self.body {
+                    return Err(PacketErr::NoBody)
+                }
+                Ok(format!(
+                    "{}", self.body.as_ref().unwrap().0
+                ))
+            }
+            Version::V1_0 => {
+                // Required fields:
+                // 1) StatusCode
+                if let None = self.status {
+                    return Err(PacketErr::NoStatusCode);
+                }
+                let mut acc = String::new();
+                acc.push_str(format!("{} {}\r\n", self.version, self.status.as_ref().unwrap()).as_str());
+                if let Some(hdrs) = &self.headers {
+                    for hdr in hdrs {
+                        acc.push_str(format!("{hdr}\r\n").as_str());
+                    }
+                    acc.push_str("\r\n");
+                } 
+                if let Some(b) = self.body.as_ref() {
+                    acc.push_str(b.0.as_str());
+                }
+                Ok(acc)
+            }
+            Version::V1_1 => {
+                // Required fields (similar to 1.0)
+                // 1) StatusCode
+                if let None = self.status {
+                    return Err(PacketErr::NoStatusCode);
+                }
+                let mut acc = String::new();
+                acc.push_str(format!("{} {}\r\n", self.version, self.status.as_ref().unwrap()).as_str());
+                if let Some(hdrs) = &self.headers {
+                    for hdr in hdrs {
+                        acc.push_str(format!("{hdr}\r\n").as_str());
+                    }
+                    acc.push_str("\r\n");
+                } 
+                if let Some(b) = self.body.as_ref() {
+                    acc.push_str(b.0.as_str());
+                }
+                Ok(acc)
+            }
+        }   
+    }
+}
+
+impl TryInto<String> for ResponsePacket {
+    type Error = PacketErr;
+    
+    fn try_into(self) -> Result<String, Self::Error> {
+        self.try_to_string()
+    }
+}
+
+impl TryInto<Vec<u8>> for ResponsePacket {
+    type Error = PacketErr;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        match self.try_to_string() {
+            Ok(s) => {
+                Ok(s.into_bytes())
+            }
+            Err(e) => Err(e)
+        }
+    }
+}
+
+/// Transitive struct for building response packets.
+///
+/// Gets consumed to yield a ResponsePacket
+#[derive(Default)]
+pub struct ResponsePacketBuilder {
+    pub version: Option<Version>,
+    pub status: Option<StatusCode>,
+    pub headers: Option<Vec<Header>>,
+    pub body: Option<Body>
+}
+
+impl ResponsePacketBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn status(&mut self, status: StatusCode) {
+        self.status = Some(status);
+    }
+
+    pub fn headers(&mut self, headers: Vec<Header>) {
+        self.headers = Some(headers);
+    }
+
+    pub fn version(&mut self, version: Version) {
+        self.version = Some(version);
+    }
+
+    pub fn body<T>(self, body: T) -> Result<ResponsePacket, PacketErr> 
+    where T: std::fmt::Display {
+        return self.opt_body(Some(body));
+    }
+
+    pub fn no_body(self) -> Result<ResponsePacket, PacketErr> {
+        return self.opt_body::<String>(None); // Pass `String` for trait bounds (<T> must be formattable)
+    }
+
+    fn opt_body<T>(mut self, body: Option<T>) -> Result<ResponsePacket, PacketErr> 
+    where T: std::fmt::Display {
+        
+        let parsed_body: Option<Body> = {
+            if let Some(b) = body {
+                Some(Body(format!("{b}")))
+            }
+            else {
+                None
+            }
+        };
+        self.body = parsed_body;
+        // required fields
+        if let None = self.version { return Err(PacketErr::NoVersion) };
+
+        let res: ResponsePacket = match self.version.unwrap() {
+            Version::V0_9 => {
+                // A HTTP/0.9 reponse packet consists of just the body.
+                // No headers, no status line. Just the body.
+                ResponsePacket {
+                    version: self.version.unwrap(),
+                    body: self.body,
+                    status: self.status,
+                    headers: self.headers,
+                }
+            },
+            Version::V1_0 => {
+                // Packet example
+                // ```
+                // HTTP/1.0 200 OK
+                // Content-Type: text/html
+                // Content-Length: 38
+                // 
+                // <html><body>Hello, world!</body></html>
+                // ```
+                if let None = self.status {
+                    return Err(PacketErr::NoStatusCode);
+                }
+                ResponsePacket {
+                    version: self.version.unwrap(),
+                    status: Some(self.status.unwrap()),
+                    body: self.body,
+                    headers: self.headers,
+                }
+            },
+            Version::V1_1 => {
+                // Pretty much the same structure as for HTTP/1.1
+                if let None = self.status {
+                    return Err(PacketErr::NoStatusCode);
+                }
+                ResponsePacket {
+                    version: self.version.unwrap(),
+                    status: Some(self.status.unwrap()),
+                    body: self.body,
+                    headers: self.headers,
+                }
+            }
+        };
+        Ok(res)
+    }
+
+    pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
+        let mut lines: Vec<&str> = s.split("\r\n").collect::<Vec<&str>>();
+        lines
+            .iter_mut()
+            .map(|l| l.trim())
+            .collect::<Vec<&str>>()
+            .retain(|l| l.len() != 0);
+
+        if lines.len() == 0 {
+            return Err(PacketErr::NotEnoughLines);
+        }
+
+        let first_line: &str = lines[0];
+        
+        // Get HTTP version
+        let ver_opt: Option<Version> = Version::try_from_first_line(first_line);
+        if let None = ver_opt {
+            return Err(PacketErr::NoVersionFound);
+        }
+        let version = ver_opt.unwrap();
+
+        // Get method
+        let fl_parts: Vec<&str> = first_line.split_whitespace()
+            .map(|x| x.trim())
+            .filter(|x| x.len() > 0)
+            .collect::<Vec<_>>();
+        if fl_parts.len() < 2 {
+            // We only have one word 
+            return Err(PacketErr::FirstLineWordCountMismatch);
+        } else if fl_parts.len() > 3 {
+            return Err(PacketErr::FirstLineWordCountMismatch);
+        }
+
+        // now we know that we have 2 or 3 words in our first line
+        let method_str = fl_parts[0];
+        let method_opt: Option<Method> = Method::try_from(method_str);
+        if let None = method_opt {
+            return Err(PacketErr::InvalidMethod);
+        }
+
+        // url
+        let url = fl_parts[1];
+
+        // Headers
+        // The list of lines will have a "" entry -> that is where the headers end
+        // This occurs because we are splitting at \r\n and a\r\n\r\nb would yield "a" "" "b"
+        assert!(lines.contains(&""));
+
+        for (index, line) in lines.iter().enumerate() {
+            if index == 0 {
+                continue; // skip the first line
+            }
+            // TODO rest
+        }
+        
+        
+
+        todo!()
+
+    }
+
+}
