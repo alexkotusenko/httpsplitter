@@ -1,4 +1,6 @@
 /// A structure representing a HTTP packet body
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Body(pub String);
 
 impl Body {

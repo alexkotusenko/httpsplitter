@@ -2,6 +2,7 @@
 pub type StatusCodeInt = usize;
 
 /// From <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status>
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StatusCode {
     // Informational responses
     /// 100

@@ -5,6 +5,7 @@
 /// Key: lorem ipsum
 ///     dolor sit amet
 /// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Header {
     pub key: String,
     pub value: String,

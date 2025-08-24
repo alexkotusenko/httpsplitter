@@ -17,6 +17,14 @@ pub enum PacketErr {
     FirstLineWordCountMismatch,
     // TODO add doc
     InvalidMethod,
+    // TODO add doc
+    MalformedHeader(String),
+    // TODO add doc
+    BodyWithABreak,
+    // TODO add doc
+    NoHeaderEndFound,
+    /// When the HTTP version indicated in the packet is not supported or invalid
+    InvalidHttpVersion,
 }
 
 /// An HTTP request packet
@@ -30,6 +38,7 @@ pub enum PacketErr {
 /// Accept-Language: en-US,en;q=0.9
 /// Connection: keep-alive
 /// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestPacket {
     pub method: Method,
     /// Aka the resource
@@ -83,6 +92,7 @@ impl Into<Vec<u8>> for RequestPacket {
 /// Transitive struct for building request packets.
 ///
 /// Gets consumed to yield a RequestPacket
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestPacketBuilder {
     pub method: Option<Method>,
     pub url: Option<String>,
@@ -146,6 +156,103 @@ impl RequestPacketBuilder {
             body: None,
         })
     }
+
+    pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
+        let mut lines: Vec<&str> = s.split("\r\n").collect::<Vec<&str>>();
+        lines
+            .iter_mut()
+            .map(|l| l.trim())
+            .collect::<Vec<&str>>()
+            .retain(|l| l.len() != 0);
+
+        if lines.len() == 0 {
+            return Err(PacketErr::NotEnoughLines);
+        }
+
+        let first_line: &str = lines[0];
+        
+        // Get HTTP version
+        let version: Version = Version::try_from_first_line(first_line)?;
+
+        // Get method
+        let fl_parts: Vec<&str> = first_line.split_whitespace()
+            .map(|x| x.trim())
+            .filter(|x| x.len() > 0)
+            .collect::<Vec<_>>();
+        if fl_parts.len() < 2 {
+            // We only have one word 
+            return Err(PacketErr::FirstLineWordCountMismatch);
+        } else if fl_parts.len() > 3 {
+            return Err(PacketErr::FirstLineWordCountMismatch);
+        }
+
+        // now we know that we have 2 or 3 words in our first line
+        let method_str = fl_parts[0];
+        let method_opt: Option<Method> = Method::try_from(method_str);
+        if let None = method_opt {
+            return Err(PacketErr::InvalidMethod);
+        }
+        let method = method_opt.unwrap();
+
+        // url
+        let url = fl_parts[1];
+
+        // Headers
+        // The list of lines will have a "" entry -> that is where the headers end
+        // This occurs because we are splitting at \r\n and a\r\n\r\nb would yield "a" "" "b"
+        
+        // assert!(lines.contains(&""));
+        if !lines.contains(&"") {
+            return Err(PacketErr::NoHeaderEndFound);
+        }
+
+        {
+            let lines_len = lines.len();
+            let second_to_last = lines_len - 1 - 1;
+            if lines[second_to_last] != "" {
+                // if the "" is not second to last, then tat means that there is a \r\n sequence after the body started
+                // this is not allowed
+                // therefore throw and err
+                return Err(PacketErr::BodyWithABreak);
+            }
+        }
+
+        let mut headers: Vec<Header> = vec![];
+
+
+        for (index, line) in lines.iter().enumerate() {
+            if index == 0 {
+                continue; // skip the first line
+            }
+            if *line == "" {
+                break; // we are done with the header lines
+            }
+            
+            let header_opt: Option<Header> = Header::try_from(line);
+            if let None = header_opt {
+                return Err(PacketErr::MalformedHeader(line.to_string()));
+            }
+
+            headers.push(header_opt.unwrap());
+        }
+
+        // Body
+        // The last "line" (where the line break is \r\n) is the body
+        let body_str = lines[lines.len()-1];
+        let body: Option<Body> = match body_str {
+            "" => None,
+            s => Some(Body(s.to_string()))
+        };
+
+        
+        Ok(Self {
+            body,
+            version: Some(version),
+            method: Some(method),
+            url: Some(url.to_string()),
+            headers: Some(headers),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -178,6 +285,7 @@ mod request_packet_test {
 /// An HTTP response packet.
 ///
 /// A HTTP/0.9 packet has no status line (which includes a version & status code) or headers, and just returns the body. This is why the `version`, `status`, and `headers` are optional.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResponsePacket {
     pub version: Version,
     pub status: Option<StatusCode>,
@@ -266,7 +374,7 @@ impl TryInto<Vec<u8>> for ResponsePacket {
 /// Transitive struct for building response packets.
 ///
 /// Gets consumed to yield a ResponsePacket
-#[derive(Default)]
+#[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct ResponsePacketBuilder {
     pub version: Option<Version>,
     pub status: Option<StatusCode>,
@@ -360,66 +468,18 @@ impl ResponsePacketBuilder {
         };
         Ok(res)
     }
+}
 
-    pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
-        let mut lines: Vec<&str> = s.split("\r\n").collect::<Vec<&str>>();
-        lines
-            .iter_mut()
-            .map(|l| l.trim())
-            .collect::<Vec<&str>>()
-            .retain(|l| l.len() != 0);
-
-        if lines.len() == 0 {
-            return Err(PacketErr::NotEnoughLines);
-        }
-
-        let first_line: &str = lines[0];
-        
-        // Get HTTP version
-        let ver_opt: Option<Version> = Version::try_from_first_line(first_line);
-        if let None = ver_opt {
-            return Err(PacketErr::NoVersionFound);
-        }
-        let version = ver_opt.unwrap();
-
-        // Get method
-        let fl_parts: Vec<&str> = first_line.split_whitespace()
-            .map(|x| x.trim())
-            .filter(|x| x.len() > 0)
-            .collect::<Vec<_>>();
-        if fl_parts.len() < 2 {
-            // We only have one word 
-            return Err(PacketErr::FirstLineWordCountMismatch);
-        } else if fl_parts.len() > 3 {
-            return Err(PacketErr::FirstLineWordCountMismatch);
-        }
-
-        // now we know that we have 2 or 3 words in our first line
-        let method_str = fl_parts[0];
-        let method_opt: Option<Method> = Method::try_from(method_str);
-        if let None = method_opt {
-            return Err(PacketErr::InvalidMethod);
-        }
-
-        // url
-        let url = fl_parts[1];
-
-        // Headers
-        // The list of lines will have a "" entry -> that is where the headers end
-        // This occurs because we are splitting at \r\n and a\r\n\r\nb would yield "a" "" "b"
-        assert!(lines.contains(&""));
-
-        for (index, line) in lines.iter().enumerate() {
-            if index == 0 {
-                continue; // skip the first line
-            }
-            // TODO rest
-        }
-        
-        
-
-        todo!()
-
+#[cfg(test)]
+mod request_packet_builder_test {
+    use super::*;
+    #[test]
+    fn too_many_words() {
+        let input = "GET /api HTTP/1.0 a";
+        let output = Err(PacketErr::FirstLineWordCountMismatch);
+        assert_eq!(
+            RequestPacketBuilder::try_from_str(input),
+            output
+        );
     }
-
 }
