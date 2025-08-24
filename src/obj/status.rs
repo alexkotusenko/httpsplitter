@@ -363,7 +363,6 @@ impl StatusCode {
         .to_string()
     }
 
-    // TODO add test cases
     pub fn code_and_description(&self) -> String {
         format!(
             "{} {}",
@@ -377,5 +376,26 @@ impl std::fmt::Display for StatusCode {
     /// E.g. `200 OK` or `518 I'm a teapot`
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code_and_description())
+    }
+}
+
+#[cfg(test)]
+mod status_code_tests {
+    use super::*;
+
+    #[test]
+    fn code_desc_200() {
+        assert_eq!(
+            "200 OK",
+            StatusCode::Ok.code_and_description().as_str()
+        );
+    }
+
+    #[test]
+    fn code_desc_418() {
+        assert_eq!(
+            "418 I'm a teapot",
+            StatusCode::ImATeapot.code_and_description().as_str()
+        );
     }
 }

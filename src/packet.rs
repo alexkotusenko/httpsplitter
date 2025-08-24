@@ -4,24 +4,20 @@ use crate::obj::{Body, Method, Header, Version, StatusCode};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PacketErr {
     /// HTTP version not specified (in reponse packets) -> cannot validate required fields
-    NoVersion, 
+    NoVersionFound, 
     /// No status code provided for reponse packets in HTTP versions that require it
     NoStatusCode,
     /// Since HTTP/0.9 packets do not have a status line and just return a body, it would be reasonable to throw this error when a HTTP/0.9 packet does not have a body. After all, the packet would be empty without it.
     NoBody,
-    // TODO add doc
-    NoVersionFound,
-    // TODO add doc
+    /// When there are not enough lines to parse the destination or method (so basically none at all)
     NotEnoughLines,
-    // TODO add doc
+    /// When there are too little or too many words in the first line
     FirstLineWordCountMismatch,
-    // TODO add doc
+    /// When the specified HTTP method is not supported or invalid
     InvalidMethod,
-    // TODO add doc
+    /// When the header can't be parsed. Includes the malformed header line.
     MalformedHeader(String),
-    // TODO add doc
-    BodyWithABreak,
-    // TODO add doc
+    /// When no `\r\n\r\n` sequence could be found in the packet. This is expected even if there are no headers.
     NoHeaderEndFound,
     /// When the HTTP version indicated in the packet is not supported or invalid
     InvalidHttpVersion,
@@ -206,16 +202,16 @@ impl RequestPacketBuilder {
             return Err(PacketErr::NoHeaderEndFound);
         }
 
-        {
-            let lines_len = lines.len();
-            let second_to_last = lines_len - 1 - 1;
-            if lines[second_to_last] != "" {
-                // if the "" is not second to last, then tat means that there is a \r\n sequence after the body started
-                // this is not allowed
-                // therefore throw and err
-                return Err(PacketErr::BodyWithABreak);
-            }
-        }
+        //{
+        //    let lines_len = lines.len();
+        //    let second_to_last = lines_len - 1 - 1;
+        //    if lines[second_to_last] != "" {
+        //        // if the "" is not second to last, then tat means that there is a \r\n sequence after the body started
+        //        // this is not allowed
+        //        // therefore throw and err
+        //        return Err(PacketErr::BodyWithABreak);
+        //    }
+        //}
 
         let mut headers: Vec<Header> = vec![];
 
@@ -238,11 +234,23 @@ impl RequestPacketBuilder {
 
         // Body
         // The last "line" (where the line break is \r\n) is the body
-        let body_str = lines[lines.len()-1];
-        let body: Option<Body> = match body_str {
+        // NOTE: Normally, a body cannot have a \r\n sequence. But if it happens, I would like this library to be smart enough to understand that it's a part of the body
+        
+        // get the index of the "" (the first one) -> that is where the headers end
+        let index_header_end: usize = lines
+            .iter()
+            .position(|x| *x == "")
+            .expect("Internal Error: Could not find `\"\"` in the list of lines");
+        let body_start_index = index_header_end + 1;
+        // remove all the lines before this one
+        // (inclusive exclusive)
+        lines = lines.drain(0..body_start_index).collect();
+        let body_str = lines.join("\n\r");
+        let body: Option<Body> = match body_str.as_str() {
             "" => None,
             s => Some(Body(s.to_string()))
         };
+        
 
         
         Ok(Self {
@@ -284,7 +292,9 @@ mod request_packet_test {
 
 /// An HTTP response packet.
 ///
-/// A HTTP/0.9 packet has no status line (which includes a version & status code) or headers, and just returns the body. This is why the `version`, `status`, and `headers` are optional.
+/// **USAGE NOTE**: A HTTP/0.9 packet has no status line (which includes a version & status code) or headers, and just returns the body. This is why the `version`, `status`, and `headers` are optional.
+///
+/// That being said, proper value checks have been implemented, so you cannot convert a ResponsePacket into a String with `try_to_string()` when one of the required values for the specified HTTP version is lacking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResponsePacket {
     pub version: Version,
@@ -421,7 +431,7 @@ impl ResponsePacketBuilder {
         };
         self.body = parsed_body;
         // required fields
-        if let None = self.version { return Err(PacketErr::NoVersion) };
+        if let None = self.version { return Err(PacketErr::NoVersionFound) };
 
         let res: ResponsePacket = match self.version.unwrap() {
             Version::V0_9 => {
@@ -481,5 +491,17 @@ mod request_packet_builder_test {
             RequestPacketBuilder::try_from_str(input),
             output
         );
+    }
+}
+
+#[cfg(test)]
+mod random_body_test {
+    use super::*;
+    
+    #[test]
+    fn joined() {
+        let v = vec!["a"];
+        let joined = v.join("\r\n");
+        assert_eq!(joined, "a");
     }
 }
