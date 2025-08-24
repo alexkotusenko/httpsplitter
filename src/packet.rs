@@ -134,6 +134,12 @@ mod reponse_packet_test {
     }
 }
 
-/// An HTTP response packet
+// An HTTP response packet
 // TODO
-pub struct ResponsePacket {}
+//pub struct ResponsePacket {}
+
+// TODO
+// Transitive struct for building response packets.
+//
+// Gets consumed to yield a ResponsePacket
+//pub struct ResponsePacketBuilder {}

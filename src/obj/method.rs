@@ -1,4 +1,4 @@
-/// Taken from https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods
+/// Taken from <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
     Get,

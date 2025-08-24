@@ -1,7 +1,7 @@
 /// The status code returned with responses
 pub type StatusCodeInt = usize;
 
-/// From https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
+/// From <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status>
 pub enum StatusCode {
     // Informational responses
     /// 100
