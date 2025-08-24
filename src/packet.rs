@@ -45,6 +45,7 @@ pub struct RequestPacket {
 }
 
 impl RequestPacket {
+    /// Infallibly convert get a string representation of the packet
     pub fn to_string(&self) -> String {
         let mut res = String::new();
 
@@ -88,7 +89,7 @@ impl Into<Vec<u8>> for RequestPacket {
 /// Transitive struct for building request packets.
 ///
 /// Gets consumed to yield a RequestPacket
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct RequestPacketBuilder {
     pub method: Option<Method>,
     pub url: Option<String>,
@@ -98,18 +99,29 @@ pub struct RequestPacketBuilder {
 }
 
 impl RequestPacketBuilder {
+    pub fn new() -> Self {
+        return Self::default();
+    }
+
+    /// URL setter
     pub fn url(&mut self, url: &str) {
         self.url = Some(url.to_string());
     }
 
+    /// Method setter
     pub fn method(&mut self, method: Method) {
         self.method = Some(method);
     }
-
+    
+    /// Header setter
     pub fn headers(&mut self, headers: Vec<Header>) {
         self.headers = Some(headers);
     }
-
+        
+    // TODO add one header
+    // TODO add one header but for the other builder 
+    
+    /// Version setter
     pub fn version(&mut self, version: Version) {
         self.version = Some(version);
     }
@@ -153,6 +165,7 @@ impl RequestPacketBuilder {
         })
     }
 
+    /// Try to parse packet builder from a string. Fallible.
     pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
         let mut lines: Vec<&str> = s.split("\r\n").collect::<Vec<&str>>();
         lines
@@ -305,10 +318,12 @@ pub struct ResponsePacket {
 
 
 impl ResponsePacket {
+    /// Try to convert resposne packet into a string. Fallible because of varying requirements for different versions.
     pub fn try_to_string(&self) -> Result<String, PacketErr> {
         // Normally, if we are using a builder, if we create a ResponsePacket struct, we can be sure that it has all the required fields. But it doens't hurt to check again
         match self.version {
             Version::V0_9 => {
+                // Disregards everything but the body
                 // Required fields:
                 // 1) Body
                 if let None = self.body {
@@ -397,6 +412,7 @@ impl ResponsePacketBuilder {
         Self::default()
     }
 
+    /// Status setter
     pub fn status(&mut self, status: StatusCode) {
         self.status = Some(status);
     }
@@ -477,6 +493,11 @@ impl ResponsePacketBuilder {
             }
         };
         Ok(res)
+    }
+
+    /// TODO
+    pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
+        todo!()
     }
 }
 
