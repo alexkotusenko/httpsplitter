@@ -121,7 +121,7 @@ mod reponse_packet_test {
         let version = "HTTP/1.0";
         
         let rp = RequestPacket {
-            method: method,
+            method: method.clone(),
             url: url.to_string(),
             headers,
             version: Version::try_from_first_line(format!("{} {} {}", method, url, version).as_str()).expect("Could not parse version"),
