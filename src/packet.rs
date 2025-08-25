@@ -113,13 +113,33 @@ impl RequestPacketBuilder {
         self.method = Some(method);
     }
     
-    /// Header setter
+    /// Header setter. Instantiates the header list or extends it.
     pub fn headers(&mut self, headers: Vec<Header>) {
-        self.headers = Some(headers);
+        match self.headers {
+            // Extend
+            Some(ref mut h) => { h.extend(headers); }
+            // Instantiate
+            None => { self.headers = Some(headers); }
+        }   
     }
         
-    // TODO add one header
-    // TODO add one header but for the other builder 
+    /// Header setter. Intantiates the list or adds a new header to it.
+    pub fn header<T>(&mut self, header_pair: (T, T)) 
+    where T: Into<String> {
+        let h = Header {
+            key: header_pair.0.into(),
+            value: header_pair.1.into()
+        };
+        match self.headers {
+            Some(ref mut hdrs) => {
+                hdrs.push(h);
+            }
+            None => {
+                let v: Vec<Header> = vec![h];
+                self.headers = Some(v);
+            }
+        }
+    }
     
     /// Version setter
     pub fn version(&mut self, version: Version) {
@@ -417,10 +437,35 @@ impl ResponsePacketBuilder {
         self.status = Some(status);
     }
 
+    /// Header setter. Instantiates the header list or extends it.
     pub fn headers(&mut self, headers: Vec<Header>) {
-        self.headers = Some(headers);
+        match self.headers {
+            // Extend
+            Some(ref mut h) => { h.extend(headers); }
+            // Instantiate
+            None => { self.headers = Some(headers); }
+        }   
     }
 
+    /// Header setter. Intantiates the list or adds a new header to it.
+    pub fn header<T>(&mut self, header_pair: (T, T)) 
+    where T: Into<String> {
+        let h = Header {
+            key: header_pair.0.into(),
+            value: header_pair.1.into()
+        };
+        match self.headers {
+            Some(ref mut hdrs) => {
+                hdrs.push(h);
+            }
+            None => {
+                let v: Vec<Header> = vec![h];
+                self.headers = Some(v);
+            }
+        }
+    }
+
+    // Version setter
     pub fn version(&mut self, version: Version) {
         self.version = Some(version);
     }
