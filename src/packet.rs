@@ -91,7 +91,7 @@ impl Into<Vec<u8>> for RequestPacket {
 /// Transitive struct for building request packets.
 ///
 /// Gets consumed to yield a RequestPacket
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RequestPacketBuilder {
     pub method: Option<Method>,
     pub url: Option<String>,
@@ -278,7 +278,7 @@ impl RequestPacketBuilder {
         // remove all the lines before this one
         // (inclusive exclusive)
         lines = lines.drain(0..body_start_index).collect();
-        let body_str = lines.join("\n\r");
+        let body_str = lines.join("\r\n");
         let body: Option<Body> = match body_str.as_str() {
             "" => None,
             s => Some(Body(s.to_string()))
@@ -610,7 +610,7 @@ impl ResponsePacketBuilder {
         // remove all the lines before this one
         // (inclusive exclusive)
         lines = lines.drain(0..body_start_index).collect();
-        let body_str = lines.join("\n\r");
+        let body_str = lines.join("\r\n");
         let body: Option<Body> = match body_str.as_str() {
             "" => None,
             s => Some(Body(s.to_string()))
