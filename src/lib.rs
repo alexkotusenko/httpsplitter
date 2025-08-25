@@ -7,8 +7,6 @@ pub mod packet;
 
 pub use packet::PacketErr;
 
-// TODO parser for String -> Reponse/Request packet
-
 // TODO check if \r\n is in the right order  (adn not the inverse)
 
 pub use obj::{

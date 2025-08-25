@@ -9,8 +9,8 @@ pub enum PacketErr {
     NoStatusCode,
     /// Since HTTP/0.9 packets do not have a status line and just return a body, it would be reasonable to throw this error when a HTTP/0.9 packet does not have a body. After all, the packet would be empty without it.
     NoBody,
-    /// When there are not enough lines to parse the destination or method (so basically none at all)
-    NotEnoughLines,
+    /// When there are not enough lines to parse the packet, or when a \r\n\r\n sequence has not been found
+    InvalidLines,
     /// When there are too little or too many words in the first line
     FirstLineWordCountMismatch,
     /// When the specified HTTP method is not supported or invalid
@@ -21,6 +21,8 @@ pub enum PacketErr {
     NoHeaderEndFound,
     /// When the HTTP version indicated in the packet is not supported or invalid
     InvalidHttpVersion,
+    /// When the first line of a response packet (the status line) is malformed
+    InvalidStatusLine,
 }
 
 /// An HTTP request packet
@@ -195,13 +197,13 @@ impl RequestPacketBuilder {
             .retain(|l| l.len() != 0);
 
         if lines.len() == 0 {
-            return Err(PacketErr::NotEnoughLines);
+            return Err(PacketErr::InvalidLines);
         }
 
         let first_line: &str = lines[0];
         
         // Get HTTP version
-        let version: Version = Version::try_from_first_line(first_line)?;
+        let version: Version = Version::try_from_first_req_line(first_line)?;
 
         // Get method
         let fl_parts: Vec<&str> = first_line.split_whitespace()
@@ -228,8 +230,8 @@ impl RequestPacketBuilder {
 
         // Headers
         // The list of lines will have a "" entry -> that is where the headers end
+         
         // This occurs because we are splitting at \r\n and a\r\n\r\nb would yield "a" "" "b"
-        
         // assert!(lines.contains(&""));
         if !lines.contains(&"") {
             return Err(PacketErr::NoHeaderEndFound);
@@ -257,12 +259,10 @@ impl RequestPacketBuilder {
                 break; // we are done with the header lines
             }
             
-            let header_opt: Option<Header> = Header::try_from(line);
-            if let None = header_opt {
-                return Err(PacketErr::MalformedHeader(line.to_string()));
-            }
+            let header_opt: Result<Header, PacketErr> = Header::try_from(*line);
+            let header = header_opt?;
 
-            headers.push(header_opt.unwrap());
+            headers.push(header);
         }
 
         // Body
@@ -313,7 +313,7 @@ mod request_packet_test {
             method: method.clone(),
             url: url.to_string(),
             headers,
-            version: Version::try_from_first_line(format!("{} {} {}", method, url, version).as_str()).expect("Could not parse version"),
+            version: Version::try_from_first_req_line(format!("{} {} {}", method, url, version).as_str()).expect("Could not parse version"),
             body: None,
         };
 
@@ -540,9 +540,94 @@ impl ResponsePacketBuilder {
         Ok(res)
     }
 
-    /// TODO
+    /// Try to parse a HTTP response packet from a string.
+    ///
+    /// **IMPORTANT NOTE**: HTTP/0.9 packets only consist of the body, so they are pretty much unparsable. Any string is a valid HTTP/0.9 packet. Therefore, **this does NOT parse HTTP/0.9 packets**.
+    ///
+    /// Example of a HTTP/0.9 response pakcet:
+    /// ```text
+    /// <p>That's it</p>
+    /// ```
     pub fn try_from_str(s: &str) -> Result<Self, PacketErr> {
-        todo!()
+        if s.trim().len() == 0 {
+            return Err(PacketErr::InvalidLines);
+        }
+
+        let mut lines: Vec<&str> = s.split("\r\n").collect();
+        if lines.len() == 1 || lines.len() == 2 {
+            // Only one \r\n sequence found, or none at all
+            // At least two are expected (After the headers
+            // e.g.
+            // ```
+            // HTTP/1.0 200 OK\r\nHeader1: Value1\r\n\r\n
+            // ```
+            return Err(PacketErr::InvalidLines);
+        }
+
+        // check if the status line (the first line) starts with a supported HTTP version
+        // Do not account for HTTP/0.9
+        assert!(lines.len() > 0);
+        let first_line = lines[0];
+
+        // get the version
+        let version_res: Result<Version, PacketErr> = Version::try_from_first_res_line(first_line);
+        let version = version_res?;
+
+        // get the status code from the first line
+        let code_res: Result<StatusCode, PacketErr> = StatusCode::try_from_first_res_line(first_line);
+        let code = code_res?;
+
+        // if there is no "" in the lines list, then that means that no \r\n\r\n sequnce was found
+        // this is invalid
+        if !lines.contains(&"") {
+            return Err(PacketErr::NoHeaderEndFound);
+        }
+
+        // parse headers
+        let mut headers: Vec<Header> = vec![];
+        for (index, line) in lines.iter().enumerate() {
+            if index == 0 {
+                continue;
+            }
+            if *line == "" {
+                // we hit the end of the headers
+                break;
+            }
+            match Header::try_from(*line) {
+                Ok(h) => {
+                    headers.push(h);
+                }
+                Err(e) => { return Err(e); }
+            }
+        }
+        
+        // now that we parsed the headers, parse the body
+        let index_header_end: usize = lines
+            .iter()
+            .position(|x| *x == "")
+            .expect("Internal Error: Could not find `\"\"` in the list of lines");
+        let body_start_index = index_header_end + 1;
+        // remove all the lines before this one
+        // (inclusive exclusive)
+        lines = lines.drain(0..body_start_index).collect();
+        let body_str = lines.join("\n\r");
+        let body: Option<Body> = match body_str.as_str() {
+            "" => None,
+            s => Some(Body(s.to_string()))
+        };
+
+        let collected_headers: Option<Vec<Header>> = if {headers.len()} == 0 {
+            None
+        } else {
+            Some(headers)
+        };
+
+        Ok(Self {
+            headers: collected_headers,
+            version: Some(version),
+            status: Some(code),
+            body,
+        })
     }
 }
 

@@ -1,3 +1,5 @@
+use crate::packet::PacketErr;
+
 /// An HTTP header. 
 ///
 /// Multi-line headers, such as the one below are rejected
@@ -11,7 +13,7 @@ pub struct Header {
     pub value: String,
 }
 
-impl Header {
+impl TryFrom<&str> for Header {
     /// Assume the following header format:
     /// ```text
     /// Key: Value
@@ -26,13 +28,17 @@ impl Header {
     ///     ipsum
     ///         dolor
     /// ```
-    pub fn try_from(s: &str) -> Option<Self> {
-        let mut parts: Option<(&str, &str)> = s.split_once(":");
+    type Error = PacketErr;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut parts: Option<(&str, &str)> = value.split_once(":");
 
-        if parts.is_none() { return None };
+        if parts.is_none() { 
+            return Err(PacketErr::MalformedHeader(value.to_string()));
+        }
 
-        let parts = parts.unwrap();
-        return Some(Self {
+        let parts: (&str, &str) = parts.unwrap();
+
+        return Ok(Self {
             key: parts.0.into(),
             value: parts.1.into()
         });

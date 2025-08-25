@@ -36,8 +36,8 @@ impl Version {
         return slice.to_string();
     }
 
-    /// Take the first line of the header and determine the HTTP version. Version 0.9 does not specify a version (e.g. `GET /some/path`).
-    pub fn try_from_first_line(first_line: &str) -> Result<Self, PacketErr> {
+    /// Take the first line of the **request** packet and determine the HTTP version. Version 0.9 does not specify a version (e.g. `GET /some/path`).
+    pub fn try_from_first_req_line(first_line: &str) -> Result<Self, PacketErr> {
         let mut parts: Vec<&str> = first_line.trim().split_whitespace().collect();
         parts.retain(|p| p.trim().len() != 0); // filter out empty strings if needed
                
@@ -60,18 +60,36 @@ impl Version {
             _ => Err(PacketErr::InvalidHttpVersion) // invalid
         }
     }
+
+    /// Try to get the HTTP version from the first line of a **response packet**.
+    /// Only the first line is expected
+    pub fn try_from_first_res_line(s: &str) -> Result<Self, PacketErr> {
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        
+        // 3 parts expected
+        // E.g. `HTTP/1.0 200 OK`
+        if parts.len() != 3 {
+            return Err(PacketErr::FirstLineWordCountMismatch);
+        }
+
+        match parts[0] {
+            "HTTP/1.0" => Ok(Self::V1_0),
+            "HTTP/1.1" => Ok(Self::V1_1),
+            _ => Err(PacketErr::NoVersionFound)
+        }
+    }
 }
 
 
 #[cfg(test)]
-mod version_test {
+mod req_version_test {
     use super::*;
 
     #[test]
     fn none1() {
         assert_eq!(
             Err(PacketErr::InvalidHttpVersion),
-            Version::try_from_first_line("GET /api HTTP/2.0")
+            Version::try_from_first_req_line("GET /api HTTP/2.0")
         );
     }
 
@@ -79,7 +97,7 @@ mod version_test {
     fn valid_0_9__1() {
         assert_eq!(
             Ok(Version::V0_9),
-            Version::try_from_first_line("GET /api")
+            Version::try_from_first_req_line("GET /api")
         );
     }
 
@@ -87,7 +105,7 @@ mod version_test {
     fn valid_0_9__2() {
         assert_eq!(
             Ok(Version::V0_9),
-            Version::try_from_first_line("POST /")
+            Version::try_from_first_req_line("POST /")
         );
     }
 
@@ -95,7 +113,7 @@ mod version_test {
     fn valid_1_0__1() {
         assert_eq!(
             Ok(Version::V1_0),
-            Version::try_from_first_line("POST / HTTP/1.0")
+            Version::try_from_first_req_line("POST / HTTP/1.0")
         );
     }
 
@@ -103,7 +121,7 @@ mod version_test {
     fn valid_1_1__1() {
         assert_eq!(
             Ok(Version::V1_1),
-            Version::try_from_first_line("POST / HTTP/1.1")
+            Version::try_from_first_req_line("POST / HTTP/1.1")
         );
     }
 }

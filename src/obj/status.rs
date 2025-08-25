@@ -1,3 +1,5 @@
+use crate::packet::PacketErr;
+
 /// The status code returned with responses
 pub type StatusCodeInt = usize;
 
@@ -369,6 +371,37 @@ impl StatusCode {
             self.as_int(),
             self.description()
         )
+    }
+
+    /// Try to extract the status code from the first line.
+    /// Only one line expected.
+    pub fn try_from_first_res_line(s: &str) -> Result<Self, PacketErr> {
+        // Expected format: VERSION CODE CODE_DESC
+        // E.g. `HTTP/1.0 200 OK`
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        if parts.len() != 3 {
+            return Err(PacketErr::InvalidStatusLine);
+        }
+
+        // TODO do the rest - for this I will need to parse String -> StatusCode
+        let status_code: StatusCodeInt = (parts[1].parse::<usize>()).map_err(|_e| PacketErr::InvalidStatusLine)?;
+ 
+        if let Some(code_enum) = Self::try_from_int(status_code) {
+            let desc = code_enum.description();
+
+            // check if the desc matches
+            if desc != parts[2] {
+                return Err(PacketErr::InvalidStatusLine);
+            }
+            else {
+                return Ok(code_enum);
+            }
+        }
+        else {
+            // The code number does not correspond to anything
+            return Err(PacketErr::InvalidStatusLine);
+        }
+
     }
 }
 
