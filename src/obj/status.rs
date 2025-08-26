@@ -383,7 +383,6 @@ impl StatusCode {
             return Err(PacketErr::InvalidStatusLine);
         }
 
-        // TODO do the rest - for this I will need to parse String -> StatusCode
         let status_code: StatusCodeInt = (parts[1].parse::<usize>()).map_err(|_e| PacketErr::InvalidStatusLine)?;
  
         if let Some(code_enum) = Self::try_from_int(status_code) {
