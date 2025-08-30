@@ -15,6 +15,12 @@ pub enum PacketErr {
     FirstLineWordCountMismatch,
     /// When the specified HTTP method is not supported or invalid
     InvalidMethod,
+    /// When the HTTP method is missing
+    MissingMethod,
+    /// When the URL is missing
+    MissingURL,
+    /// When the version is missing
+    MissingVersion,
     /// When the header can't be parsed. Includes the malformed header line.
     MalformedHeader(String),
     /// When no `\r\n\r\n` sequence could be found in the packet. This is expected even if there are no headers.
@@ -106,27 +112,30 @@ impl RequestPacketBuilder {
     }
 
     /// URL setter
-    pub fn url(&mut self, url: &str) {
+    pub fn url(mut self, url: &str) -> Self {
         self.url = Some(url.to_string());
+        self
     }
 
     /// Method setter
-    pub fn method(&mut self, method: Method) {
+    pub fn method(mut self, method: Method) -> Self {
         self.method = Some(method);
+        self
     }
     
     /// Header setter. Instantiates the header list or extends it.
-    pub fn headers(&mut self, headers: Vec<Header>) {
+    pub fn headers(mut self, headers: Vec<Header>) -> Self {
         match self.headers {
             // Extend
             Some(ref mut h) => { h.extend(headers); }
             // Instantiate
             None => { self.headers = Some(headers); }
         }   
+        self
     }
         
     /// Header setter. Intantiates the list or adds a new header to it.
-    pub fn header<T>(&mut self, header_pair: (T, T)) 
+    pub fn header<T>(mut self, header_pair: (T, T)) -> Self  
     where T: Into<String> {
         let h = Header {
             key: header_pair.0.into(),
@@ -141,49 +150,45 @@ impl RequestPacketBuilder {
                 self.headers = Some(v);
             }
         }
+
+        self
     }
     
     /// Version setter
-    pub fn version(&mut self, version: Version) {
+    pub fn version(mut self, version: Version) -> Self {
         self.version = Some(version);
+        self
     }
 
-    /// Consumes the request builder and tries to convert it into a baked request with the specified body.
-    ///
-    /// The method, version and URL are required.
-    pub fn body<T>(mut self, body: T) -> Option<RequestPacket> 
+    /// Body setter
+    pub fn body<T>(mut self, body: T) -> Self 
     where T: std::fmt::Display {
         self.body = Some(Body(format!("{body}")));
-        // required fields
-        if let None = self.method { return None; }
-        if let None = self.url { return None; }
-        if let None = self.version { return None };
+        self
+    }
 
-        Some(RequestPacket {
+    // TODO content_len header function (to set the length of the packet) 
+    // TODO ^ add this for the other builder as well
+
+    /// Try to convert the builder into a request packet. Fails if the method, URL or version is missing.
+    pub fn try_build(self) -> Result<RequestPacket, PacketErr> {
+        // required fields
+        if let None = self.method { 
+            return Err(PacketErr::MissingMethod); 
+        }
+        if let None = self.url { 
+            return Err(PacketErr::MissingURL); 
+        }
+        if let None = self.version { 
+            return Err(PacketErr::MissingVersion);
+        }
+        
+        Ok(RequestPacket {
             method: self.method.unwrap(),
             url: self.url.unwrap(),
             version: self.version.unwrap(),
             headers: self.headers.unwrap_or(Vec::new()),
             body: self.body,
-        })
-    }
-
-
-    /// Consumes the request builder and tries to convert it into a baked request packet with no body.
-    ///
-    /// The method, version and URL are required.
-    pub fn no_body(self) -> Option<RequestPacket> {
-        // required fields
-        if let None = self.method { return None; }
-        if let None = self.url { return None; }
-        if let None = self.version { return None };
-        
-        Some(RequestPacket {
-            method: self.method.unwrap(),
-            url: self.url.unwrap(),
-            version: self.version.unwrap(),
-            headers: self.headers.unwrap_or(Vec::new()),
-            body: None,
         })
     }
 
@@ -433,22 +438,24 @@ impl ResponsePacketBuilder {
     }
 
     /// Status setter
-    pub fn status(&mut self, status: StatusCode) {
+    pub fn status(mut self, status: StatusCode) -> Self {
         self.status = Some(status);
+        self
     }
 
     /// Header setter. Instantiates the header list or extends it.
-    pub fn headers(&mut self, headers: Vec<Header>) {
+    pub fn headers(mut self, headers: Vec<Header>) -> Self {
         match self.headers {
             // Extend
             Some(ref mut h) => { h.extend(headers); }
             // Instantiate
             None => { self.headers = Some(headers); }
         }   
+        self
     }
 
     /// Header setter. Intantiates the list or adds a new header to it.
-    pub fn header<T>(&mut self, header_pair: (T, T)) 
+    pub fn header<T>(mut self, header_pair: (T, T)) -> Self
     where T: Into<String> {
         let h = Header {
             key: header_pair.0.into(),
@@ -463,34 +470,23 @@ impl ResponsePacketBuilder {
                 self.headers = Some(v);
             }
         }
+        self
     }
 
-    // Version setter
-    pub fn version(&mut self, version: Version) {
+    /// Version setter
+    pub fn version(mut self, version: Version) -> Self {
         self.version = Some(version);
+        self
     }
 
-    pub fn body<T>(self, body: T) -> Result<ResponsePacket, PacketErr> 
+    /// Body setter
+    pub fn body<T>(mut self, body: T) -> Self
     where T: std::fmt::Display {
-        return self.opt_body(Some(body));
-    }
-
-    pub fn no_body(self) -> Result<ResponsePacket, PacketErr> {
-        return self.opt_body::<String>(None); // Pass `String` for trait bounds (<T> must be formattable)
-    }
-
-    fn opt_body<T>(mut self, body: Option<T>) -> Result<ResponsePacket, PacketErr> 
-    where T: std::fmt::Display {
-        
-        let parsed_body: Option<Body> = {
-            if let Some(b) = body {
-                Some(Body(format!("{b}")))
-            }
-            else {
-                None
-            }
-        };
         self.body = parsed_body;
+        self
+    }
+
+    fn try_build(mut self) -> Result<ResponsePacket, PacketErr> {
         // required fields
         if let None = self.version { return Err(PacketErr::NoVersionFound) };
 
