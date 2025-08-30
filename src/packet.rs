@@ -482,7 +482,7 @@ impl ResponsePacketBuilder {
     /// Body setter
     pub fn body<T>(mut self, body: T) -> Self
     where T: std::fmt::Display {
-        self.body = parsed_body;
+        self.body = Some(Body(format!("{body}")));
         self
     }
 
