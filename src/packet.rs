@@ -486,7 +486,7 @@ impl ResponsePacketBuilder {
         self
     }
 
-    fn try_build(mut self) -> Result<ResponsePacket, PacketErr> {
+    pub fn try_build(mut self) -> Result<ResponsePacket, PacketErr> {
         // required fields
         if let None = self.version { return Err(PacketErr::NoVersionFound) };
 
