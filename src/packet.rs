@@ -167,8 +167,19 @@ impl RequestPacketBuilder {
         self
     }
 
-    // TODO content_len header function (to set the length of the packet) 
-    // TODO ^ add this for the other builder as well
+    /// Sets the `Content-Length` header. If there is no body, does not set anything
+    pub fn content_length(mut self) -> Self {
+        match self.body {
+            Some(ref body) => {
+                let byte_count: usize = body.0.len();
+                self = self.header(("Content-Length", format!("{byte_count}").as_str()));
+                self
+            }
+            None => {
+                self
+            }
+        }
+    }
 
     /// Try to convert the builder into a request packet. Fails if the method, URL or version is missing.
     pub fn try_build(self) -> Result<RequestPacket, PacketErr> {
@@ -484,6 +495,20 @@ impl ResponsePacketBuilder {
     where T: std::fmt::Display {
         self.body = Some(Body(format!("{body}")));
         self
+    }
+
+    /// Sets the `Content-Length` header. If there is no body, does not set anything
+    pub fn content_length(mut self) -> Self {
+        match self.body {
+            Some(ref body) => {
+                let byte_count: usize = body.0.len();
+                self = self.header(("Content-Length", format!("{byte_count}").as_str()));
+                self
+            }
+            None => {
+                self
+            }
+        }
     }
 
     pub fn try_build(mut self) -> Result<ResponsePacket, PacketErr> {
