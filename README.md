@@ -1,4 +1,4 @@
-## httsplitter
+## httpsplitter
 
 This is a low-level crate for working with HTTP packets.
 
